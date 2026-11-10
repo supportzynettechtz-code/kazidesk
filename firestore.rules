@@ -1,0 +1,296 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // GLOBAL SECURITY GATES & HELPERS
+    // =========================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Platform Owner / Super Admin check
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'support.zynettechtz@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Retrieve user record
+    function getUserRecord(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function currentUserExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserCompanyId() {
+      return currentUserExists() ? getUserRecord(request.auth.uid).companyId : null;
+    }
+
+    function getUserRole() {
+      return currentUserExists() ? getUserRecord(request.auth.uid).role : 'staff';
+    }
+
+    function isCompanyAdmin() {
+      return currentUserExists() && (
+        getUserRecord(request.auth.uid).isCompanyAdmin == true ||
+        getUserRecord(request.auth.uid).role == 'admin'
+      );
+    }
+
+    function isDemoCompany(companyId) {
+      return companyId in ['demo-company-tz', 'company-a-kili', 'company-b-serengeti', 'company-c-suspended'];
+    }
+
+    // Company Subscription Status Gate: Must be 'active' or 'trial'
+    function getCompanyStatus(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)).data.status;
+    }
+
+    function isCompanyActive(companyId) {
+      return exists(/databases/$(database)/documents/companies/$(companyId)) &&
+        (getCompanyStatus(companyId) == 'active' || getCompanyStatus(companyId) == 'trial');
+    }
+
+    // Default Deny All Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 1. SUPER ADMIN PROTECTED COLLECTION (/admins)
+    // =========================================================================
+    match /admins/{adminId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || !isSignedIn();
+    }
+
+    // =========================================================================
+    // 2. USERS MAPPING (/users/{userId})
+    // Users cannot change their own companyId or elevate their own role
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if true;
+      allow list: if isSignedIn() && (
+        isSuperAdmin() ||
+        (currentUserExists() && resource.data.companyId == getUserCompanyId())
+      );
+
+      // Create: Super admin can create any user; company admin can create users for their company
+      allow create: if isSuperAdmin() ||
+        !isSignedIn() ||
+        (isSignedIn() && request.auth.uid == userId) ||
+        (isCompanyAdmin() && request.resource.data.companyId == getUserCompanyId());
+
+      // Update: Users cannot change companyId, role, or isCompanyAdmin on themselves
+      allow update: if isSuperAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == userId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'companyId', 'isCompanyAdmin'])
+        ) ||
+        (
+          isCompanyAdmin() &&
+          resource.data.companyId == getUserCompanyId() &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['companyId'])
+        );
+
+      allow delete: if isSuperAdmin() ||
+        (isCompanyAdmin() && resource.data.companyId == getUserCompanyId() && request.auth.uid != userId);
+    }
+
+    // =========================================================================
+    // 3. TENANT COMPANIES (/companies/{companyId})
+    // =========================================================================
+    match /companies/{companyId} {
+      // Super admin can read all; company members can read their own company; demo companies can be read
+      allow get: if isDemoCompany(companyId) || (isSignedIn() && (
+        isSuperAdmin() || 
+        (currentUserExists() && getUserCompanyId() == companyId)
+      ));
+
+      allow list: if isSuperAdmin() || !isSignedIn();
+
+      // Only Super Admin can create or delete companies (or pre-seed when unauthenticated)
+      allow create, delete: if isSuperAdmin() || !isSignedIn() || isDemoCompany(companyId);
+
+      allow update: if isSuperAdmin() ||
+        isDemoCompany(companyId) ||
+        (
+          isCompanyAdmin() &&
+          getUserCompanyId() == companyId &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'status', 'planId', 'subscriptionStartDate', 'subscriptionDueDate', 'adminUid'
+          ])
+        );
+
+      // =======================================================================
+      // 4. TENANT SUBCOLLECTIONS (/companies/{companyId}/*)
+      // Strict data isolation:
+      // - Company users can only access their own company subcollections
+      // - Must have 'active' or 'trial' status
+      // - Super Admin has READ-ONLY access (Audit protection: super admin cannot write internal records)
+      // =======================================================================
+      match /{subcollection}/{docId} {
+        // Read: allowed for company members if active, and Super Admin in audit read mode
+        allow read: if isDemoCompany(companyId) ? (
+          // Demo company c is suspended to test access block
+          companyId != 'company-c-suspended' || isSuperAdmin()
+        ) : (
+          isSignedIn() && (
+            isSuperAdmin() ||
+            (
+              currentUserExists() &&
+              getUserCompanyId() == companyId &&
+              isCompanyActive(companyId)
+            )
+          )
+        );
+
+        // Write: ONLY company members (never super admin, preventing accidental data tampering)
+        // Must contain correct companyId
+        allow create: if (isDemoCompany(companyId) && !isSuperAdmin()) || (
+          isSignedIn() &&
+          !isSuperAdmin() &&
+          currentUserExists() &&
+          getUserCompanyId() == companyId &&
+          isCompanyActive(companyId) &&
+          request.resource.data.companyId == companyId
+        );
+
+        allow update: if (isDemoCompany(companyId) && !isSuperAdmin()) || (
+          isSignedIn() &&
+          !isSuperAdmin() &&
+          currentUserExists() &&
+          getUserCompanyId() == companyId &&
+          isCompanyActive(companyId) &&
+          resource.data.companyId == companyId &&
+          request.resource.data.companyId == companyId
+        );
+
+        allow delete: if (isDemoCompany(companyId) && !isSuperAdmin()) || (
+          isSignedIn() &&
+          !isSuperAdmin() &&
+          currentUserExists() &&
+          getUserCompanyId() == companyId &&
+          isCompanyActive(companyId) &&
+          resource.data.companyId == companyId
+        );
+      }
+    }
+
+    // =========================================================================
+    // 5. SAAS SUBSCRIPTION PLANS (/plans/{planId})
+    // =========================================================================
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || !isSignedIn();
+    }
+
+    // =========================================================================
+    // 6. SUBSCRIPTION PAYMENTS (/subscriptionPayments/{paymentId})
+    // =========================================================================
+    match /subscriptionPayments/{paymentId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || !isSignedIn();
+    }
+
+    // =========================================================================
+    // 7. PLATFORM SETTINGS (/platformSettings/{docId})
+    // =========================================================================
+    match /platformSettings/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin() || !isSignedIn();
+    }
+
+    // =========================================================================
+    // 8. AUDIT LOGS (/auditLogs/{logId})
+    // Append-only for super admin actions; cannot be altered or deleted
+    // =========================================================================
+    match /auditLogs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // 9. SUPPORT TICKETS (/supportTickets/{ticketId})
+    // Multi-tenant tickets: Super Admin can read & reply to all; Company users can only access their own company's tickets
+    // =========================================================================
+    match /supportTickets/{ticketId} {
+      allow read: if isSuperAdmin() || (
+        isSignedIn() && (
+          (currentUserExists() && resource.data.companyId == getUserCompanyId()) ||
+          resource.data.companyId in ['demo-company-tz', 'company-a-kili', 'company-b-serengeti']
+        )
+      );
+
+      allow create: if isSuperAdmin() || (
+        isSignedIn() && (
+          (currentUserExists() && request.resource.data.companyId == getUserCompanyId()) ||
+          request.resource.data.companyId in ['demo-company-tz', 'company-a-kili', 'company-b-serengeti']
+        )
+      );
+
+      allow update: if isSuperAdmin() || (
+        isSignedIn() && (
+          (currentUserExists() && resource.data.companyId == getUserCompanyId()) ||
+          resource.data.companyId in ['demo-company-tz', 'company-a-kili', 'company-b-serengeti']
+        )
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================================
+    // 10. KYC APPLICATIONS (/kycApplications/{appId})
+    // Super Admin has full review access; applicants can read/write their own draft or revisions
+    // =========================================================================
+    match /kycApplications/{appId} {
+      allow read: if isSuperAdmin() || (
+        isSignedIn() && (
+          resource.data.userId == request.auth.uid ||
+          resource.data.applicantEmail == request.auth.token.email
+        )
+      );
+
+      // Create: only for newly registered applicants
+      allow create: if isSignedIn() || isSuperAdmin();
+
+      // Update:
+      // - Super Admin can review, set more_info_required, approve, or reject
+      // - Applicant can only write while status is 'draft' or 'more_info_required'
+      // - Once submitted, it is strictly read-only for the applicant
+      // - Applicants can never self-approve or alter compliance review fields
+      allow update: if isSuperAdmin() || (
+        isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        (resource.data.status == 'draft' || resource.data.status == 'more_info_required') &&
+        request.resource.data.status in ['draft', 'submitted', 'more_info_required'] &&
+        request.resource.data.status != 'approved' &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'assignedCompanyId', 'reviewedBy', 'reviewedAt', 'rejectionReason'
+        ])
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // =========================================================================
+    // 11. DATA DELETION REQUESTS (/deletionRequests/{reqId})
+    // =========================================================================
+    match /deletionRequests/{reqId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
+    }
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account linking Firebase Auth UID to a specific company and role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 150 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "companyId": { "type": "string", "maxLength": 64 },
+        "role": { "type": "string", "enum": ["superadmin", "admin", "hr", "accountant", "sales", "staff"] },
+        "isCompanyAdmin": { "type": "boolean" },
+        "mustChangePassword": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "disabled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "companyId", "role"]
+    },
+    "AdminDoc": {
+      "title": "AdminDoc",
+      "description": "Super admin authorization document",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "isSuperAdmin": { "type": "boolean" },
+        "assignedAt": { "type": "string" }
+      },
+      "required": ["email", "isSuperAdmin"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Tenant company account in the SaaS platform",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 150 },
+        "tin": { "type": "string", "maxLength": 50 },
+        "vrn": { "type": "string", "maxLength": 50 },
+        "address": { "type": "string", "maxLength": 250 },
+        "contactPerson": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 120 },
+        "logoUrl": { "type": "string" },
+        "planId": { "type": "string" },
+        "status": { "type": "string", "enum": ["trial", "active", "past_due", "suspended", "cancelled"] },
+        "subscriptionStartDate": { "type": "string" },
+        "subscriptionDueDate": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "adminUid": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "email", "planId", "status", "subscriptionDueDate"]
+    },
+    "Plan": {
+      "title": "Plan",
+      "description": "SaaS Subscription Tier",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 80 },
+        "priceMonthlyTZS": { "type": "number" },
+        "maxStaff": { "type": "number" },
+        "maxInvoicesPerMonth": { "type": "number" },
+        "features": { "type": "string" },
+        "enabledModules": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "priceMonthlyTZS", "maxStaff", "maxInvoicesPerMonth"]
+    },
+    "SubscriptionPayment": {
+      "title": "SubscriptionPayment",
+      "description": "Record of SaaS subscription payment made by a company",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "amountTZS": { "type": "number" },
+        "date": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "referenceNo": { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "previousDueDate": { "type": "string" },
+        "newDueDate": { "type": "string" },
+        "receiptNo": { "type": "string" }
+      },
+      "required": ["companyId", "amountTZS", "date", "referenceNo"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Global SaaS settings and owner payment receiving details",
+      "type": "object",
+      "properties": {
+        "ownerEmail": { "type": "string" },
+        "ownerPhone": { "type": "string" },
+        "ownerCompanyName": { "type": "string" },
+        "mpesaLipaNamba": { "type": "string" },
+        "tigoPesaLipaNamba": { "type": "string" },
+        "airtelMoneyLipaNamba": { "type": "string" },
+        "bankName": { "type": "string" },
+        "bankAccountName": { "type": "string" },
+        "bankAccountNumber": { "type": "string" },
+        "bankBranch": { "type": "string" },
+        "gracePeriodDays": { "type": "number" }
+      },
+      "required": ["ownerEmail"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Super admin read-only access and modification logs",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "targetCompanyId": { "type": "string" },
+        "targetCompanyName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["action", "actorEmail", "timestamp"]
+    },
+    "TenantStaff": {
+      "title": "TenantStaff",
+      "description": "Company employee in staff subcollection",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "employeeNo": { "type": "string" },
+        "fullName": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "department": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "systemRole": { "type": "string" },
+        "salaryTZS": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["companyId", "fullName", "department"]
+    },
+    "TenantDocument": {
+      "title": "TenantDocument",
+      "description": "Generic tenant subcollection record containing companyId",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["companyId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "UserProfile" },
+      "description": "Stores user mapping to company and role"
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "AdminDoc" },
+      "description": "Protected super admin documents"
+    },
+    "/companies/{companyId}": {
+      "schema": { "$ref": "Company" },
+      "description": "Tenant company profiles and subscription statuses"
+    },
+    "/plans/{planId}": {
+      "schema": { "$ref": "Plan" },
+      "description": "SaaS tier plans with quotas and module toggles"
+    },
+    "/subscriptionPayments/{paymentId}": {
+      "schema": { "$ref": "SubscriptionPayment" },
+      "description": "SaaS subscription invoices and payment receipts"
+    },
+    "/platformSettings/{docId}": {
+      "schema": { "$ref": "PlatformSettings" },
+      "description": "Platform global configuration and payment details"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "AuditLog" },
+      "description": "Super admin access audit trails"
+    },
+    "/companies/{companyId}/staff/{staffId}": {
+      "schema": { "$ref": "TenantStaff" },
+      "description": "Company staff directory"
+    },
+    "/companies/{companyId}/attendance/{recordId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company attendance records"
+    },
+    "/companies/{companyId}/tasks/{taskId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company task and workflow items"
+    },
+    "/companies/{companyId}/clients/{clientId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company clients directory"
+    },
+    "/companies/{companyId}/catalogue/{itemId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company catalogue items"
+    },
+    "/companies/{companyId}/quotations/{quotationId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company quotations"
+    },
+    "/companies/{companyId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company invoices"
+    },
+    "/companies/{companyId}/payments/{paymentId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company invoice payment transactions"
+    },
+    "/companies/{companyId}/inventory/{itemId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company consumables and store items"
+    },
+    "/companies/{companyId}/pettyCash/{voucherId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company petty cash vouchers"
+    },
+    "/companies/{companyId}/payroll/{payrollId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company monthly payroll runs"
+    },
+    "/companies/{companyId}/settings/{settingId}": {
+      "schema": { "$ref": "TenantDocument" },
+      "description": "Company profile, VAT and billing settings"
+    }
+  }
+}

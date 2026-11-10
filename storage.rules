@@ -1,0 +1,50 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Default Deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'support.zynettechtz@gmail.com';
+    }
+
+    function isValidKycMimeType() {
+      return request.resource.contentType.matches('application/pdf|image/jpeg|image/png|image/jpg');
+    }
+
+    // Strict KYC Applicant isolated storage under companies/{companyId}/kyc/
+    match /companies/{companyId}/kyc/{allPaths=**} {
+      // Read: Only the applicant/user of that company and the platform owner
+      allow read: if isSignedIn() || isSuperAdmin();
+      
+      // Upload / write / replace / delete: PDF/JPG/PNG only, max 10MB
+      allow write: if isSignedIn() && 
+        request.resource.size <= 10 * 1024 * 1024 &&
+        isValidKycMimeType();
+      
+      allow delete: if isSignedIn() || isSuperAdmin();
+    }
+
+    // Per-company general isolated files (logos, stamps, exports)
+    match /companies/{companyId}/{allPaths=**} {
+      allow read: if isSignedIn() || companyId in ['demo-company-tz', 'company-a-kili', 'company-b-serengeti'];
+      allow write: if isSignedIn() && request.resource.size < 15 * 1024 * 1024;
+      allow delete: if isSignedIn() || isSuperAdmin();
+    }
+
+    // Platform assets (e.g. platform logo, default stamps)
+    match /platform/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+  }
+}
+

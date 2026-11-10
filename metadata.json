@@ -1,0 +1,6 @@
+{
+  "name": "KaziDesk - Office Management System",
+  "description": "Mfumo thabiti wa kisasa wa kusimamia ofisi: Mahudhurio ya wafanyakazi, utaratibu wa kazi na majukumu, kumbukumbu za nyaraka, mfumo kamili wa mishahara (payroll) na udhibiti wa rasilimali na vifaa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
